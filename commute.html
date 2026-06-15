@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commute Compass — Where Could You Live?</title>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --border: #1f2937;
+    --text: #e2e8f0;
+    --muted: #6b7280;
+    --accent: #6366f1;
+    --good: #34d399;
+    --warn: #fcd34d;
+    --bad: #fb7185;
+    --transit: #f0883e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    padding: 2rem;
+    text-align: center;
+    background: linear-gradient(180deg, #0d1220 0%, transparent 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #34d399, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  header p {
+    color: var(--muted);
+    margin-top: 0.5rem;
+    font-size: 0.95rem;
+    max-width: 640px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .main {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+    gap: 2rem;
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    align-self: start;
+  }
+  .panel h2 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 1.25rem;
+  }
+
+  .field { margin-bottom: 1.25rem; }
+  .field label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+  }
+  .field .row { display: flex; justify-content: space-between; align-items: center; }
+  .field input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
+  .val { font-size: 0.9rem; font-weight: 600; color: var(--text); }
+
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  .mode-btn {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    padding: 0.6rem 0.5rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex; align-items: center; gap: 0.45rem;
+  }
+  .mode-btn .ic { font-size: 1.05rem; }
+  .mode-btn:hover { border-color: var(--accent); color: var(--text); }
+  .mode-btn.active {
+    border-color: var(--accent);
+    color: var(--text);
+    background: linear-gradient(135deg, rgba(99,102,241,0.22), rgba(52,211,153,0.12));
+  }
+
+  .toggle { display: flex; align-items: center; gap: 0.6rem; font-size: 0.82rem; color: var(--muted); cursor: pointer; }
+  .toggle input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+
+  .divider { height: 1px; background: var(--border); margin: 1.25rem 0; }
+  .hint { font-size: 0.75rem; color: var(--muted); line-height: 1.5; }
+  .hint b { color: var(--good); }
+
+  .right-col { display: flex; flex-direction: column; gap: 1.5rem; min-width: 0; }
+
+  .banner {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--good);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+  .banner b { color: var(--good); }
+
+  .map-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+  .map-wrap { position: relative; }
+  canvas#map { width: 100%; display: block; border-radius: 8px; cursor: crosshair; }
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(2,6,16,0.9);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.75rem;
+    color: var(--text);
+    transform: translate(-50%, -130%);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; margin-top: 0.9rem; }
+  .legend-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--muted); }
+  .legend-sw { width: 14px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  .legend-ramp { width: 70px; height: 10px; border-radius: 3px; background: linear-gradient(90deg,#34d399,#fcd34d,#fb7185); }
+
+  .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1rem 1.1rem;
+  }
+  .stat .k { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat .v { font-size: 1.5rem; font-weight: 700; margin-top: 0.35rem; }
+  .stat .s { font-size: 0.74rem; color: var(--muted); margin-top: 0.2rem; }
+
+  .cmp-panel, .hoods-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; }
+  .cmp-panel h2, .hoods-panel h2 {
+    font-size: 0.85rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--accent); margin-bottom: 1.1rem;
+  }
+  .cmp-bar { display: grid; grid-template-columns: 90px 1fr 52px; align-items: center; gap: 0.75rem; margin-bottom: 0.7rem; font-size: 0.82rem; }
+  .cmp-bar .track { background: var(--bg); border-radius: 6px; height: 18px; overflow: hidden; border: 1px solid var(--border); }
+  .cmp-bar .fill { height: 100%; border-radius: 6px 0 0 6px; transition: width 0.3s; }
+  .cmp-bar .pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .cmp-bar.active label { color: var(--text); font-weight: 600; }
+
+  .hood-row {
+    display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 0.75rem;
+    padding: 0.7rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem;
+  }
+  .hood-row:last-child { border-bottom: none; }
+  .hood-name { font-weight: 600; }
+  .hood-name .vibe { display: block; font-size: 0.72rem; color: var(--muted); font-weight: 400; }
+  .hood-time { font-variant-numeric: tabular-nums; text-align: right; }
+  .badge { font-size: 0.68rem; padding: 0.15rem 0.5rem; border-radius: 999px; white-space: nowrap; }
+  .badge.in { background: rgba(52,211,153,0.15); color: var(--good); border: 1px solid rgba(52,211,153,0.35); }
+  .badge.out { background: rgba(107,114,128,0.12); color: var(--muted); border: 1px solid var(--border); }
+  .rent { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  footer { text-align: center; color: var(--muted); font-size: 0.75rem; padding: 1.5rem; line-height: 1.6; }
+
+  @media (max-width: 1024px) { .main { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) { .stat-row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Commute Compass</h1>
+  <p>Pin your workplace, choose how far you'll travel and how you'll get there — then watch every neighborhood you could call home and still make it to work light up.</p>
+</header>
+
+<div class="main">
+  <!-- LEFT: controls -->
+  <div class="panel">
+    <h2>Your Commute</h2>
+
+    <div class="field">
+      <label>How you travel</label>
+      <div class="modes" id="modes">
+        <button class="mode-btn active" data-mode="walk"><span class="ic">🚶</span> Walk</button>
+        <button class="mode-btn" data-mode="bike"><span class="ic">🚲</span> Bike</button>
+        <button class="mode-btn" data-mode="transit"><span class="ic">🚇</span> Transit</button>
+        <button class="mode-btn" data-mode="drive"><span class="ic">🚗</span> Drive</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Max commute time</label>
+      <div class="row">
+        <input type="range" id="time" min="5" max="45" value="15" step="1" oninput="onSlider()">
+        <span class="val" id="time-val">15 min</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="toggle">
+        <input type="checkbox" id="rush" onchange="recomputeRoutes()">
+        Rush hour (slower driving)
+      </label>
+    </div>
+
+    <div class="divider"></div>
+    <h2>Map</h2>
+    <p class="hint">
+      <b>Click anywhere on the map</b> to move your workplace 📍. The green zone is everywhere
+      you could live and still arrive within your time budget. This is a simulated city with a
+      real shortest-path routing engine — roads, a transit line, parks and a river that you can
+      only cross at the bridges.
+    </p>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right-col">
+    <div class="banner" id="banner"></div>
+
+    <div class="map-panel">
+      <div class="map-wrap">
+        <canvas id="map"></canvas>
+        <div class="tooltip" id="tooltip"></div>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><span class="legend-ramp"></span> faster → slower (in zone)</div>
+        <div class="legend-item"><span class="legend-sw" style="background:#33405c"></span> arterial / bridge</div>
+        <div class="legend-item"><span class="legend-sw" style="background:var(--transit)"></span> transit line</div>
+        <div class="legend-item"><span class="legend-sw" style="background:#16301f"></span> park</div>
+        <div class="legend-item"><span class="legend-sw" style="background:#102a4a"></span> river</div>
+      </div>
+    </div>
+
+    <div class="stat-row" id="stats"></div>
+
+    <div class="cmp-panel">
+      <h2>If you changed how you travel…</h2>
+      <div id="cmp"></div>
+    </div>
+
+    <div class="hoods-panel">
+      <h2>Neighborhoods, closest first</h2>
+      <div id="hoods"></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Prototype · self-contained, no external data or APIs · travel times come from a Dijkstra
+  shortest-path search over a procedurally generated street, transit &amp; river network.<br>
+  Swap the simulated grid for a real isochrone API (Mapbox / OpenRouteService / Google) to make it live.
+</footer>
+
+<script>
+/* ----------------------------------------------------------------------------
+   Commute Compass — a self-contained "reverse commute" finder.
+   A seeded city is generated once; travel times are computed with Dijkstra
+   over a grid graph whose edge costs depend on terrain and travel mode.
+---------------------------------------------------------------------------- */
+
+const COLS = 60, ROWS = 40, N = COLS * ROWS;
+const CELL_KM = 0.12; // each cell ≈ 120 m
+
+// terrain types
+const BLOCK = 0, STREET = 1, ARTERIAL = 2, PARK = 3, WATER = 4;
+
+// per-cell traversal times (minutes) derived from typical speeds
+const tWalk      = CELL_KM / 4.8 * 60;  // ≈1.50
+const tBikeRoad  = CELL_KM / 18  * 60;  // ≈0.40
+const tBikeBlock = CELL_KM / 9   * 60;  // ≈0.80
+const tDriveLoc  = CELL_KM / 30  * 60;  // ≈0.24
+const tDriveArt  = CELL_KM / 55  * 60;  // ≈0.13
+const tRide      = CELL_KM / 48  * 60;  // ≈0.15
+const BOARD_WAIT = 3.5;                 // minutes to board transit
+
+const terrain = new Int8Array(N).fill(BLOCK);
+const transit = new Uint8Array(N);      // 1 if a transit corridor runs through
+const hood    = new Int16Array(N).fill(-1);
+
+const idx = (x, y) => y * COLS + x;
+const inb = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS;
+
+/* ---- seeded RNG so the city is identical every load ---- */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rng = mulberry32(0xC0FFEE);
+
+/* ---- generate the city ---- */
+function rasterLine(x0, y0, x1, y1, cb) {
+  let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+  let sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+  while (true) {
+    cb(x0, y0);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x0 += sx; }
+    if (e2 < dx) { err += dx; y0 += sy; }
+  }
+}
+
+function generateCity() {
+  // 1. river — a wavy band you can only cross at arterials (bridges)
+  for (let y = 0; y < ROWS; y++) {
+    const cx = Math.round(20 + 7 * Math.sin(y * 0.22 + 0.5));
+    for (let x = cx; x <= cx + 1; x++) if (inb(x, y)) terrain[idx(x, y)] = WATER;
+  }
+  // 2. street grid (skip water)
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
+      if ((x % 4 === 0 || y % 4 === 0) && terrain[idx(x, y)] !== WATER)
+        terrain[idx(x, y)] = STREET;
+  // 3. arterials (override anything, incl. water → bridge)
+  for (let x = 0; x < COLS; x++) terrain[idx(x, 20)] = ARTERIAL;          // main cross-town
+  for (let y = 0; y < ROWS; y++) terrain[idx(30, y)] = ARTERIAL;          // main north-south
+  rasterLine(4, 4, 56, 36, (x, y) => { if (inb(x, y)) terrain[idx(x, y)] = ARTERIAL; }); // diagonal
+  // 4. parks (only over plain blocks, so roads/bridges survive)
+  const parks = [[42, 5, 49, 11], [6, 27, 12, 34], [50, 23, 57, 29]];
+  for (const [x0, y0, x1, y1] of parks)
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++)
+        if (inb(x, y) && terrain[idx(x, y)] === BLOCK) terrain[idx(x, y)] = PARK;
+  // 5. transit line (a polyline corridor with stations)
+  const route = [[6, 30], [26, 20], [46, 20], [54, 9]];
+  for (let s = 0; s < route.length - 1; s++)
+    rasterLine(route[s][0], route[s][1], route[s + 1][0], route[s + 1][1],
+      (x, y) => { if (inb(x, y)) transit[idx(x, y)] = 1; });
+  window.__route = route;
+}
+
+/* ---- neighborhoods (Voronoi over hand-placed seeds) ---- */
+const HOODS = [
+  { x: 10, y: 9,  name: 'Old Town' },
+  { x: 31, y: 7,  name: 'Uptown' },
+  { x: 49, y: 8,  name: 'The Heights' },
+  { x: 7,  y: 22, name: 'Mill Quarter' },
+  { x: 22, y: 31, name: 'Greenwood' },
+  { x: 41, y: 33, name: 'Harbor Flats' },
+  { x: 53, y: 25, name: 'Sunset Row' },
+  { x: 19, y: 17, name: 'Market District' },
+  { x: 44, y: 18, name: 'Riverside' },
+];
+const VIBES = ['Lively & walkable', 'Quiet & leafy', 'Up-and-coming', 'Family-friendly',
+  'Trendy & busy', 'Historic charm', 'Riverside calm', 'Nightlife hub', 'Artsy & local'];
+
+function nearestWater(x, y) {
+  let best = 99;
+  for (let yy = Math.max(0, y - 5); yy <= Math.min(ROWS - 1, y + 5); yy++)
+    for (let xx = Math.max(0, x - 5); xx <= Math.min(COLS - 1, x + 5); xx++)
+      if (terrain[idx(xx, yy)] === WATER) best = Math.min(best, Math.hypot(xx - x, yy - y));
+  return best;
+}
+
+function buildHoods() {
+  // nudge any seed off the water
+  for (const h of HOODS) while (terrain[idx(h.x, h.y)] === WATER && h.x < COLS - 1) h.x++;
+  // rent: pricier near the center & the waterfront, plus a little noise
+  const cx = 30, cy = 20, maxD = Math.hypot(30, 20);
+  for (const h of HOODS) {
+    const d = Math.hypot(h.x - cx, h.y - cy);
+    const waterfront = nearestWater(h.x, h.y) < 4 ? 450 : 0;
+    let rent = 3500 - (d / maxD) * 1700 + waterfront + (rng() * 400 - 200);
+    h.rent = Math.round(Math.max(1100, Math.min(4200, rent)) / 50) * 50;
+    h.vibe = VIBES[Math.floor(rng() * VIBES.length)];
+  }
+  // assign every cell to the nearest seed
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++) {
+      let best = 0, bd = 1e9;
+      for (let i = 0; i < HOODS.length; i++) {
+        const dd = (HOODS[i].x - x) ** 2 + (HOODS[i].y - y) ** 2;
+        if (dd < bd) { bd = dd; best = i; }
+      }
+      hood[idx(x, y)] = best;
+    }
+}
+
+/* ---- routing: Dijkstra with a tiny binary heap ---- */
+function edgeCost(u, v, mode, rush) {
+  const tv = terrain[v];
+  switch (mode) {
+    case 'walk':
+      if (tv === WATER) return Infinity;
+      return tWalk * (tv === PARK ? 0.95 : tv === BLOCK ? 1.08 : 1.0);
+    case 'bike':
+      if (tv === WATER) return Infinity;
+      if (tv === BLOCK) return tBikeBlock;
+      if (tv === PARK)  return tBikeRoad * 0.95;
+      return tBikeRoad;
+    case 'drive': {
+      const r = rush ? 1.55 : 1;
+      if (tv === STREET)   return tDriveLoc * r;
+      if (tv === ARTERIAL) return tDriveArt * r;
+      if (tv === BLOCK)    return tDriveLoc * 2.2 * r; // park on the street & walk in
+      return Infinity;                                 // park / water
+    }
+    case 'transit':
+      if (transit[v] && transit[u]) return tRide;                       // riding
+      if (transit[v] && !transit[u]) return tWalk + BOARD_WAIT;         // boarding
+      if (tv === WATER) return Infinity;                                // walking
+      return tWalk * (tv === PARK ? 0.95 : tv === BLOCK ? 1.08 : 1.0);
+  }
+}
+
+function dijkstra(src, mode, rush) {
+  const dist = new Float64Array(N).fill(Infinity);
+  dist[src] = 0;
+  const hd = [0], hn = [src]; // parallel-array min-heap
+  const swap = (i, j) => { [hd[i], hd[j]] = [hd[j], hd[i]]; [hn[i], hn[j]] = [hn[j], hn[i]]; };
+  const push = (d, n) => {
+    hd.push(d); hn.push(n);
+    let i = hd.length - 1;
+    while (i > 0) { const p = (i - 1) >> 1; if (hd[p] <= hd[i]) break; swap(i, p); i = p; }
+  };
+  const pop = () => {
+    const rd = hd[0], rn = hn[0], last = hd.length - 1;
+    hd[0] = hd[last]; hn[0] = hn[last]; hd.pop(); hn.pop();
+    let i = 0; const len = hd.length;
+    while (true) {
+      let s = i, l = 2 * i + 1, r = 2 * i + 2;
+      if (l < len && hd[l] < hd[s]) s = l;
+      if (r < len && hd[r] < hd[s]) s = r;
+      if (s === i) break; swap(i, s); i = s;
+    }
+    return [rd, rn];
+  };
+  while (hd.length) {
+    const [d, u] = pop();
+    if (d > dist[u]) continue;
+    const ux = u % COLS, uy = (u / COLS) | 0;
+    const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (const [dx, dy] of nb) {
+      const nx = ux + dx, ny = uy + dy;
+      if (!inb(nx, ny)) continue;
+      const v = idx(nx, ny), w = edgeCost(u, v, mode, rush);
+      if (!isFinite(w)) continue;
+      const nd = d + w;
+      if (nd < dist[v]) { dist[v] = nd; push(nd, v); }
+    }
+  }
+  return dist;
+}
+
+/* ---- state ---- */
+let mode = 'walk';
+let workCell = idx(30, 20);       // downtown by default
+let dists = {};                   // dist arrays for all four modes
+const MODES = ['walk', 'bike', 'transit', 'drive'];
+const MODE_LABEL = { walk: '🚶 Walk', bike: '🚲 Bike', transit: '🚇 Transit', drive: '🚗 Drive' };
+
+function maxTime() { return parseInt(document.getElementById('time').value); }
+
+function recomputeRoutes() {
+  const rush = document.getElementById('rush').checked;
+  for (const m of MODES) dists[m] = dijkstra(workCell, m, rush);
+  update();
+}
+
+/* ---- rendering ---- */
+const canvas = document.getElementById('map');
+const ctx = canvas.getContext('2d');
+let cw = 12, ch = 12; // cell pixel size
+
+function colorRamp(t) {
+  t = Math.max(0, Math.min(1, t));
+  const stops = [[0, [52, 211, 153]], [0.5, [252, 211, 77]], [1, [251, 113, 133]]];
+  let a = stops[0], b = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++)
+    if (t >= stops[i][0] && t <= stops[i + 1][0]) { a = stops[i]; b = stops[i + 1]; break; }
+  const f = (t - a[0]) / (b[0] - a[0] || 1);
+  return `rgb(${a[1].map((c, i) => Math.round(c + (b[1][i] - c) * f)).join(',')})`;
+}
+
+const BASE = { [BLOCK]: '#161d2e', [STREET]: '#232c40', [ARTERIAL]: '#33405c', [PARK]: '#16301f', [WATER]: '#102a4a' };
+
+function draw() {
+  const wrapW = canvas.parentElement.clientWidth;
+  cw = wrapW / COLS; ch = cw;
+  const W = wrapW, H = ch * ROWS;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const d = dists[mode], budget = maxTime();
+
+  // 1. terrain + 2. travel-time overlay
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const i = idx(x, y), px = x * cw, py = y * ch;
+      ctx.fillStyle = BASE[terrain[i]];
+      ctx.fillRect(px, py, cw + 0.5, ch + 0.5);
+      if (terrain[i] === WATER) continue;          // land only
+      if (d[i] <= budget) {
+        ctx.globalAlpha = 0.55;
+        ctx.fillStyle = colorRamp(d[i] / budget);
+        ctx.fillRect(px, py, cw + 0.5, ch + 0.5);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = 'rgba(4,7,15,0.6)';        // dim everything out of reach
+        ctx.fillRect(px, py, cw + 0.5, ch + 0.5);
+      }
+    }
+  }
+
+  // 3. transit line + stations
+  const route = window.__route;
+  ctx.strokeStyle = '#f0883e';
+  ctx.lineWidth = Math.max(2, cw * 0.28); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath();
+  route.forEach((p, i) => { const X = (p[0] + .5) * cw, Y = (p[1] + .5) * ch; i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+  ctx.stroke();
+  // stations roughly every 7 cells along the route
+  let acc = 0;
+  for (let s = 0; s < route.length - 1; s++) {
+    const [x0, y0] = route[s], [x1, y1] = route[s + 1];
+    const segLen = Math.hypot(x1 - x0, y1 - y0);
+    for (let t = 0; t < segLen; t += 0.5) {
+      acc += 0.5;
+      if (acc >= 7) {
+        acc = 0;
+        const X = (x0 + (x1 - x0) * (t / segLen) + .5) * cw, Y = (y0 + (y1 - y0) * (t / segLen) + .5) * ch;
+        ctx.fillStyle = '#0a0e1a'; ctx.beginPath(); ctx.arc(X, Y, cw * 0.32, 0, 7); ctx.fill();
+        ctx.fillStyle = '#f0883e'; ctx.beginPath(); ctx.arc(X, Y, cw * 0.18, 0, 7); ctx.fill();
+      }
+    }
+  }
+
+  // 4. contour around the reachable zone
+  ctx.strokeStyle = '#a7f3d0'; ctx.lineWidth = 2;
+  ctx.shadowColor = 'rgba(52,211,153,0.8)'; ctx.shadowBlur = 6;
+  ctx.beginPath();
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const i = idx(x, y);
+      if (terrain[i] === WATER || d[i] > budget) continue;
+      const px = x * cw, py = y * ch;
+      const out = (nx, ny) => !inb(nx, ny) || terrain[idx(nx, ny)] === WATER || dists[mode][idx(nx, ny)] > budget;
+      if (out(x, y - 1)) { ctx.moveTo(px, py); ctx.lineTo(px + cw, py); }
+      if (out(x, y + 1)) { ctx.moveTo(px, py + ch); ctx.lineTo(px + cw, py + ch); }
+      if (out(x - 1, y)) { ctx.moveTo(px, py); ctx.lineTo(px, py + ch); }
+      if (out(x + 1, y)) { ctx.moveTo(px + cw, py); ctx.lineTo(px + cw, py + ch); }
+    }
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // 5. neighborhood labels
+  ctx.textAlign = 'center'; ctx.font = `600 ${Math.max(10, cw * 0.85)}px system-ui`;
+  for (const h of HOODS) {
+    const X = (h.x + .5) * cw, Y = (h.y + .5) * ch;
+    const tw = ctx.measureText(h.name).width;
+    ctx.fillStyle = 'rgba(10,14,26,0.62)';
+    ctx.fillRect(X - tw / 2 - 4, Y - 8, tw + 8, 15);
+    ctx.fillStyle = 'rgba(226,232,240,0.92)';
+    ctx.fillText(h.name, X, Y + 4);
+  }
+
+  // 6. workplace marker
+  const wx = (workCell % COLS + .5) * cw, wy = ((workCell / COLS | 0) + .5) * ch;
+  ctx.fillStyle = 'rgba(99,102,241,0.25)'; ctx.beginPath(); ctx.arc(wx, wy, cw * 1.4, 0, 7); ctx.fill();
+  ctx.fillStyle = '#6366f1'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(wx, wy, cw * 0.6, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = `700 ${Math.max(9, cw * 0.8)}px system-ui`;
+  ctx.fillText('WORK', wx, wy - cw * 1.05);
+}
+
+/* ---- stats + lists ---- */
+function landCount() {
+  let n = 0; for (let i = 0; i < N; i++) if (terrain[i] !== WATER) n++; return n;
+}
+const LAND_TOTAL = (() => { let n = 0; return () => n || (n = landCount()); })();
+
+function reachStats(d, budget) {
+  let reach = 0;
+  for (let i = 0; i < N; i++) if (terrain[i] !== WATER && d[i] <= budget) reach++;
+  return reach;
+}
+
+function hoodTime(d, h) {
+  // best (minimum) reachable time across the neighborhood — the best spot to live
+  let best = Infinity, inb = 0, tot = 0;
+  for (let i = 0; i < N; i++)
+    if (hood[i] === HOODS.indexOf(h) && terrain[i] !== WATER) {
+      tot++; if (d[i] < best) best = d[i];
+    }
+  for (let i = 0; i < N; i++)
+    if (hood[i] === HOODS.indexOf(h) && terrain[i] !== WATER && d[i] <= maxTime()) inb++;
+  return { best, frac: tot ? inb / tot : 0 };
+}
+
+function fmtMin(m) { return isFinite(m) ? Math.round(m) + ' min' : '—'; }
+
+function update() {
+  document.getElementById('time-val').textContent = maxTime() + ' min';
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+
+  draw();
+
+  const d = dists[mode], budget = maxTime(), land = LAND_TOTAL();
+  const reach = reachStats(d, budget);
+  const pct = Math.round(100 * reach / land);
+  const areaKm = (reach * CELL_KM * CELL_KM).toFixed(1);
+
+  // neighborhoods
+  const rows = HOODS.map(h => ({ h, ...hoodTime(d, h) }))
+    .sort((a, b) => a.best - b.best);
+  const inZone = rows.filter(r => r.best <= budget);
+  const avgRent = inZone.length ? Math.round(inZone.reduce((s, r) => s + r.h.rent, 0) / inZone.length) : 0;
+  const bestValue = inZone.slice().sort((a, b) => a.h.rent - b.h.rent)[0];
+
+  // banner
+  document.getElementById('banner').innerHTML =
+    `By <b>${MODE_LABEL[mode].split(' ')[1].toLowerCase()}</b>, <b>${pct}%</b> of the city is within ` +
+    `<b>${budget} min</b> of work — <b>${inZone.length}</b> neighborhood${inZone.length === 1 ? '' : 's'} ` +
+    `you could live in` + (bestValue ? `, from <b>$${bestValue.h.rent.toLocaleString()}/mo</b>.` : '.');
+
+  // stat cards
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="k">Livable footprint</div><div class="v" style="color:var(--good)">${pct}%</div><div class="s">≈ ${areaKm} km² in reach</div></div>
+    <div class="stat"><div class="k">Neighborhoods</div><div class="v">${inZone.length}<span style="font-size:0.9rem;color:var(--muted)"> / ${HOODS.length}</span></div><div class="s">at least partly reachable</div></div>
+    <div class="stat"><div class="k">Avg rent in zone</div><div class="v">${avgRent ? '$' + avgRent.toLocaleString() : '—'}</div><div class="s">${bestValue ? 'best value: ' + bestValue.h.name : 'widen your budget'}</div></div>`;
+
+  // mode comparison bars
+  document.getElementById('cmp').innerHTML = MODES.map(m => {
+    const p = Math.round(100 * reachStats(dists[m], budget) / land);
+    return `<div class="cmp-bar ${m === mode ? 'active' : ''}">
+      <label>${MODE_LABEL[m]}</label>
+      <div class="track"><div class="fill" style="width:${p}%;background:${m === mode ? 'linear-gradient(90deg,#34d399,#60a5fa)' : '#374151'}"></div></div>
+      <span class="pct">${p}%</span></div>`;
+  }).join('');
+
+  // neighborhood list
+  document.getElementById('hoods').innerHTML = rows.map(r => {
+    const on = r.best <= budget;
+    return `<div class="hood-row">
+      <div class="hood-name">${r.h.name}<span class="vibe">${r.h.vibe}${on ? ` · ${Math.round(r.frac * 100)}% of it in reach` : ''}</span></div>
+      <div class="hood-time">${fmtMin(r.best)}<br><span class="rent">$${r.h.rent.toLocaleString()}</span></div>
+      <span class="badge ${on ? 'in' : 'out'}">${on ? 'in zone' : 'too far'}</span>
+    </div>`;
+  }).join('');
+}
+
+function onSlider() { update(); } // slider only re-thresholds; no re-routing needed
+
+/* ---- interaction ---- */
+document.getElementById('modes').addEventListener('click', e => {
+  const b = e.target.closest('.mode-btn'); if (!b) return;
+  mode = b.dataset.mode; update();
+});
+
+function cellFromEvent(e) {
+  const r = canvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX - r.left) / r.width * COLS);
+  const y = Math.floor((e.clientY - r.top) / r.height * ROWS);
+  return inb(x, y) ? { x, y } : null;
+}
+
+canvas.addEventListener('click', e => {
+  const c = cellFromEvent(e); if (!c) return;
+  let { x, y } = c;
+  if (terrain[idx(x, y)] === WATER) {           // snap off the river
+    let best = null, bd = 1e9;
+    for (let yy = y - 4; yy <= y + 4; yy++) for (let xx = x - 4; xx <= x + 4; xx++)
+      if (inb(xx, yy) && terrain[idx(xx, yy)] !== WATER) {
+        const dd = (xx - x) ** 2 + (yy - y) ** 2; if (dd < bd) { bd = dd; best = [xx, yy]; }
+      }
+    if (best) [x, y] = best;
+  }
+  workCell = idx(x, y);
+  recomputeRoutes();
+});
+
+const tooltip = document.getElementById('tooltip');
+canvas.addEventListener('mousemove', e => {
+  const c = cellFromEvent(e); if (!c) { tooltip.style.opacity = 0; return; }
+  const i = idx(c.x, c.y), d = dists[mode][i];
+  if (terrain[i] === WATER || !isFinite(d)) { tooltip.style.opacity = 0; return; }
+  const r = canvas.getBoundingClientRect();
+  tooltip.style.left = ((c.x + .5) / COLS * r.width) + 'px';
+  tooltip.style.top = ((c.y + .5) / ROWS * r.height) + 'px';
+  tooltip.textContent = `${HOODS[hood[i]].name} · ≈ ${Math.round(d)} min`;
+  tooltip.style.opacity = 1;
+});
+canvas.addEventListener('mouseleave', () => tooltip.style.opacity = 0);
+
+window.addEventListener('resize', draw);
+
+/* ---- go ---- */
+generateCity();
+buildHoods();
+recomputeRoutes();
+</script>
+</body>
+</html>
