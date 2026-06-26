@@ -91,8 +91,10 @@
         <div class="seg active" data-mode="walk">🚶 Walk</div>
         <div class="seg" data-mode="bike">🚲 Bike</div>
         <div class="seg" data-mode="drive">🚗 Drive</div>
+        <div class="seg" data-mode="subway">🚇 Subway</div>
+        <div class="seg" data-mode="bus">🚌 Bus</div>
       </div>
-      <div class="small">Public-transit isochrones aren't offered by this provider — walk, bike &amp; drive use real road routing.</div>
+      <div class="small">Walk, bike &amp; drive use real road routing (add a key for exact zones). <b style="color:var(--warn)">Subway &amp; bus</b> are modeled estimates — an average door-to-door speed with stop access &amp; waiting time baked in — because this provider has no public-transit data. They work with or without a key.</div>
     </div>
     <div class="field">
       <label>Max commute time — <span class="val" id="time-val">15 min</span></label>
@@ -137,6 +139,14 @@
 const ORS = 'https://api.openrouteservice.org';
 const PROFILE = { walk: 'foot-walking', bike: 'cycling-regular', drive: 'driving-car' };
 const SPEED_KMH = { walk: 4.8, bike: 16, drive: 32 }; // for the no-key fallback estimate
+// Modeled transit — this provider has no transit routing, so subway/bus use an
+// effective door-to-door speed (km/h) plus a fixed access penalty (minutes) for
+// walking to a stop, waiting, and egress. Approximate, and labeled as such.
+const TRANSIT = {
+  subway: { speed: 32, access: 8, color: '#f0883e' },
+  bus:    { speed: 15, access: 6, color: '#22d3ee' },
+};
+const isTransit = m => m === 'subway' || m === 'bus';
 
 let mode = 'walk';
 let key = localStorage.getItem('ors_key') || '';
@@ -209,6 +219,7 @@ async function showZone() {
   if (!workLL) { status('Locate a workplace first (search, or click the map).', 'warn'); return; }
   const minutes = +$('time').value;
   if (isoLayer) { map.removeLayer(isoLayer); isoLayer = null; }
+  if (isTransit(mode)) { drawTransitEstimate(minutes); return; }
   if (!key) { drawEstimate(minutes); return; }
 
   $('go').disabled = true; status('Asking OpenRouteService for the real travel-time zone…');
@@ -240,6 +251,22 @@ function drawEstimate(minutes) {
   status(`Rough <b>${minutes}-min ${mode}</b> estimate (straight-line, ignores roads). Add a free ORS key for the real zone.`, 'warn');
 }
 
+/* ---- subway/bus estimate — provider has no transit routing ---- */
+function drawTransitEstimate(minutes) {
+  const t = TRANSIT[mode];
+  const effMin = Math.max(0, minutes - t.access);
+  const radiusM = t.speed * 1000 / 60 * effMin; // door-to-door avg, minus stop access/wait
+  if (radiusM <= 0) {
+    status(`In <b>${minutes} min</b> you'd still be reaching a ${mode} stop &amp; waiting (~${t.access} min). Increase the time.`, 'warn');
+    return;
+  }
+  isoLayer = L.circle([workLL.lat, workLL.lng], {
+    radius: radiusM, color: t.color, weight: 2, dashArray: '6 5', fillColor: t.color, fillOpacity: 0.12
+  }).addTo(map);
+  map.fitBounds(isoLayer.getBounds(), { padding: [30, 30] });
+  status(`Estimated <b>${minutes}-min ${mode}</b> zone — modeled at ~${t.speed} km/h door-to-door with ~${t.access} min to reach &amp; wait for a stop. Approximate (no transit data from this provider), not turn-by-turn routing.`, 'warn');
+}
+
 /* ---- check a specific home ---- */
 async function checkHome() {
   if (!workLL) { status('Set a workplace first, then check a home against it.', 'warn'); return; }
@@ -251,6 +278,12 @@ async function checkHome() {
   homeMarker = L.marker([g.lat, g.lng]).addTo(map).bindPopup('🏠 ' + g.label).openPopup();
 
   const minutes = +$('time').value;
+  if (isTransit(mode)) {
+    const t = TRANSIT[mode], km = haversine(workLL, homeLL), mins = t.access + km / t.speed * 60;
+    drawRouteLine();
+    status(`🏠 ≈ <b>${mins.toFixed(0)} min</b> by ${mode} — estimate: ${km.toFixed(1)} km at ~${t.speed} km/h + ~${t.access} min access &amp; wait. ${mins <= minutes ? '<b>✓ within budget</b>' : '<b>✗ over budget</b>'}.`, mins <= minutes ? 'ok' : 'err');
+    return;
+  }
   if (!key) {
     const km = haversine(workLL, homeLL), mins = km / SPEED_KMH[mode] * 60;
     drawRouteLine();
