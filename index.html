@@ -16,6 +16,7 @@
     --warn: #fcd34d;
     --bad: #fb7185;
     --transit: #f0883e;
+    --bus: #22d3ee;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
@@ -130,10 +131,11 @@
     <div class="field">
       <label>How you travel</label>
       <div class="modes" id="modes">
-        <button class="seg active" data-mode="walk"><span class="ic">🚶</span> Walk</button>
+        <button class="seg" data-mode="walk"><span class="ic">🚶</span> Walk</button>
         <button class="seg" data-mode="bike"><span class="ic">🚲</span> Bike</button>
-        <button class="seg" data-mode="transit"><span class="ic">🚇</span> Transit</button>
-        <button class="seg" data-mode="drive"><span class="ic">🚗</span> Drive</button>
+        <button class="seg active" data-mode="subway"><span class="ic">🚇</span> Subway</button>
+        <button class="seg" data-mode="bus"><span class="ic">🚌</span> Bus</button>
+        <button class="seg" data-mode="drive" style="grid-column:1/-1"><span class="ic">🚗</span> Drive</button>
       </div>
     </div>
 
@@ -146,7 +148,7 @@
     </div>
 
     <div class="field">
-      <label class="toggle"><input type="checkbox" id="rush" onchange="recomputeRoutes()"> Rush hour (slower driving)</label>
+      <label class="toggle"><input type="checkbox" id="rush" onchange="recomputeRoutes()"> Rush hour (slower driving &amp; buses)</label>
     </div>
 
     <div class="divider"></div>
@@ -171,7 +173,8 @@
       <div class="legend">
         <div class="legend-item"><span class="legend-ramp"></span> faster → slower (in zone)</div>
         <div class="legend-item"><span class="legend-sw" style="background:#33405c"></span> arterial / bridge</div>
-        <div class="legend-item"><span class="legend-sw" style="background:var(--transit)"></span> transit</div>
+        <div class="legend-item"><span class="legend-sw" style="background:var(--transit)"></span> subway</div>
+        <div class="legend-item"><span class="legend-sw" style="background:var(--bus)"></span> bus</div>
         <div class="legend-item"><span class="legend-sw" style="background:#16301f"></span> park</div>
         <div class="legend-item"><span class="legend-sw" style="background:#102a4a"></span> river</div>
       </div>
@@ -198,7 +201,7 @@
 
 <footer>
   Prototype · self-contained, no external data or APIs · travel times come from a Dijkstra shortest-path
-  search over a procedurally generated street, transit &amp; river network.<br>
+  search over a procedurally generated street, subway, bus &amp; river network.<br>
   Want real streets and a real address? Open the <a href="commute-live.html" style="color:var(--accent)">live-map version</a>.
 </footer>
 
@@ -214,13 +217,15 @@ const CELL_KM = 0.12;
 const BLOCK = 0, STREET = 1, ARTERIAL = 2, PARK = 3, WATER = 4;
 
 const tWalk = CELL_KM / 4.8 * 60, tBikeRoad = CELL_KM / 18 * 60, tBikeBlock = CELL_KM / 9 * 60;
-const tDriveLoc = CELL_KM / 30 * 60, tDriveArt = CELL_KM / 55 * 60, tRide = CELL_KM / 48 * 60;
-const BOARD_WAIT = 3.5;
+const tDriveLoc = CELL_KM / 30 * 60, tDriveArt = CELL_KM / 55 * 60;
+const tSubRide = CELL_KM / 48 * 60, tBusRide = CELL_KM / 18 * 60;
+const SUB_WAIT = 4.0, BUS_WAIT = 4.5;
 
 const terrain = new Int8Array(N);
-const transit = new Uint8Array(N);
+const subway = new Uint8Array(N);
+const bus = new Uint8Array(N);
 const hood = new Int16Array(N);
-let routePts = [];
+let routePts = [], busLines = [];
 
 const idx = (x, y) => y * COLS + x;
 const inb = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS;
@@ -250,7 +255,7 @@ function rasterLine(x0, y0, x1, y1, cb) {
 
 function generateCity() {
   rng = mulberry32(citySeed);
-  terrain.fill(BLOCK); transit.fill(0);
+  terrain.fill(BLOCK); subway.fill(0); bus.fill(0);
   // river — wavy band, parameters vary by seed
   const rBase = 16 + rng() * 12, rAmp = 5 + rng() * 5, rFreq = 0.15 + rng() * 0.15, rPhase = rng() * 6;
   for (let y = 0; y < ROWS; y++) {
@@ -273,11 +278,21 @@ function generateCity() {
     for (let y = py; y <= py + ph; y++) for (let x = px; x <= px + pw; x++)
       if (inb(x, y) && terrain[idx(x, y)] === BLOCK) terrain[idx(x, y)] = PARK;
   }
-  // transit line
+  // subway line — fast, limited coverage
   routePts = [[6, 30], [26, 20], [46, 20], [54, 9]];
   for (let s = 0; s < routePts.length - 1; s++)
     rasterLine(routePts[s][0], routePts[s][1], routePts[s + 1][0], routePts[s + 1][1],
-      (x, y) => { if (inb(x, y)) transit[idx(x, y)] = 1; });
+      (x, y) => { if (inb(x, y)) subway[idx(x, y)] = 1; });
+  // bus network — slower, but a denser grid of surface routes
+  busLines = [
+    [[0, 20], [59, 20]], [[30, 0], [30, 39]],
+    [[2, 8], [57, 8]], [[2, 31], [57, 31]],
+    [[15, 2], [15, 37]], [[45, 2], [45, 37]],
+  ];
+  for (const line of busLines)
+    for (let s = 0; s < line.length - 1; s++)
+      rasterLine(line[s][0], line[s][1], line[s + 1][0], line[s + 1][1],
+        (x, y) => { if (inb(x, y)) bus[idx(x, y)] = 1; });
 }
 
 /* ---- neighborhoods ---- */
@@ -341,11 +356,18 @@ function edgeCost(u, v, mode, rush) {
       if (tv === BLOCK) return tDriveLoc * 2.2 * r;
       return Infinity;
     }
-    case 'transit':
-      if (transit[v] && transit[u]) return tRide;
-      if (transit[v] && !transit[u]) return tWalk + BOARD_WAIT;
+    case 'subway':
+      if (subway[v] && subway[u]) return tSubRide;
+      if (subway[v] && !subway[u]) return tWalk + SUB_WAIT;
       if (tv === WATER) return Infinity;
       return tWalk * (tv === PARK ? 0.95 : tv === BLOCK ? 1.08 : 1.0);
+    case 'bus': {
+      const br = rush ? 1.25 : 1;
+      if (bus[v] && bus[u]) return tBusRide * br;
+      if (bus[v] && !bus[u]) return tWalk + BUS_WAIT;
+      if (tv === WATER) return Infinity;
+      return tWalk * (tv === PARK ? 0.95 : tv === BLOCK ? 1.08 : 1.0);
+    }
   }
 }
 function dijkstra(src, mode, rush) {
@@ -379,11 +401,11 @@ function dijkstra(src, mode, rush) {
 }
 
 /* ---- state ---- */
-const MODES = ['walk', 'bike', 'transit', 'drive'];
-const MODE_LABEL = { walk: '🚶 Walk', bike: '🚲 Bike', transit: '🚇 Transit', drive: '🚗 Drive' };
+const MODES = ['walk', 'bike', 'subway', 'bus', 'drive'];
+const MODE_LABEL = { walk: '🚶 Walk', bike: '🚲 Bike', subway: '🚇 Subway', bus: '🚌 Bus', drive: '🚗 Drive' };
 const WCOLORS = ['#6366f1', '#a78bfa', '#22d3ee'];
 const HOME_COLOR = '#f472b6';
-let mode = 'walk', goal = 'live';
+let mode = 'subway', goal = 'live';
 let works = [idx(30, 20)], activeWork = 0, home = null;
 let distByWork = [], combined = {};
 
@@ -442,7 +464,16 @@ function draw() {
     else { ctx.fillStyle = 'rgba(4,7,15,0.6)'; ctx.fillRect(px, py, cw + 0.5, ch + 0.5); }
   }
 
-  // transit + stations
+  // bus network — thin surface routes drawn underneath the subway
+  ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = Math.max(1.5, cw * 0.14); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.globalAlpha = 0.6;
+  for (const line of busLines) {
+    ctx.beginPath();
+    line.forEach((p, i) => { const X = (p[0] + .5) * cw, Y = (p[1] + .5) * ch; i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // subway line + stations
   ctx.strokeStyle = '#f0883e'; ctx.lineWidth = Math.max(2, cw * 0.28); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   ctx.beginPath();
   routePts.forEach((p, i) => { const X = (p[0] + .5) * cw, Y = (p[1] + .5) * ch; i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
