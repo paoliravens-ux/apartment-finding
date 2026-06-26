@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Financial Parallel Universe Calculator</title>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --border: #1f2937;
+    --text: #e2e8f0;
+    --muted: #6b7280;
+    --accent: #6366f1;
+    --u0: #94a3b8;
+    --u1: #34d399;
+    --u2: #60a5fa;
+    --u3: #f59e0b;
+    --u4: #f472b6;
+    --u5: #a78bfa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    padding: 2rem;
+    text-align: center;
+    background: linear-gradient(180deg, #0d1220 0%, transparent 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #6366f1, #a78bfa, #60a5fa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  header p {
+    color: var(--muted);
+    margin-top: 0.5rem;
+    font-size: 0.95rem;
+  }
+
+  .main {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 0;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+    gap: 2rem;
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+  }
+
+  .panel h2 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 1.25rem;
+  }
+
+  .field {
+    margin-bottom: 1rem;
+  }
+  .field label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 0.35rem;
+  }
+  .field input[type=range] {
+    width: 100%;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .field .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .field .val {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    min-width: 80px;
+    text-align: right;
+  }
+  .field input[type=number] {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 0.9rem;
+    padding: 0.4rem 0.6rem;
+    width: 100%;
+    outline: none;
+  }
+  .field input[type=number]:focus {
+    border-color: var(--accent);
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 1.25rem 0;
+  }
+
+  .right-col {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* Universe cards */
+  .universes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+  .uni-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    transition: transform 0.15s;
+  }
+  .uni-card:hover { transform: translateY(-2px); }
+  .uni-card .uni-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.3rem;
+  }
+  .uni-card .uni-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: var(--text);
+  }
+  .uni-card .uni-desc {
+    font-size: 0.72rem;
+    color: var(--muted);
+    line-height: 1.5;
+    margin-bottom: 0.75rem;
+  }
+  .uni-card .uni-net {
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+  .uni-card .uni-net-label {
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  /* Timeline chart */
+  .chart-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+  }
+  .chart-panel h2 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 1.25rem;
+  }
+  canvas#timeline {
+    width: 100%;
+    height: 320px;
+    display: block;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.5rem;
+    margin-top: 1rem;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Insights */
+  .insights {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+  }
+  .insights h2 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 1rem;
+  }
+  .insight-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+  .insight-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  .insight-item strong {
+    display: block;
+    color: var(--text);
+    font-size: 0.85rem;
+    margin-bottom: 0.2rem;
+  }
+
+  /* Age slider row */
+  .age-display {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+  }
+  .age-tag {
+    font-size: 0.72rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .age-tag.active, .age-tag:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  @media (max-width: 1100px) {
+    .main { grid-template-columns: 1fr; }
+    .universes { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 600px) {
+    .universes { grid-template-columns: 1fr; }
+    .insight-list { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Financial Parallel Universe Calculator</h1>
+  <p>See 5 alternate futures branching from today's single decision — diverging timelines, compounding realities.</p>
+</header>
+
+<div class="main">
+  <!-- LEFT: Inputs -->
+  <div class="panel">
+    <h2>Your Current Reality</h2>
+
+    <div class="field">
+      <label>Current Age</label>
+      <div class="row">
+        <input type="range" id="age" min="18" max="60" value="30" oninput="update()">
+        <span class="val" id="age-val">30</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Annual Income ($)</label>
+      <input type="number" id="income" value="75000" oninput="update()">
+    </div>
+
+    <div class="field">
+      <label>Current Savings / Net Worth ($)</label>
+      <input type="number" id="savings" value="25000" oninput="update()">
+    </div>
+
+    <div class="field">
+      <label>Monthly Expenses ($)</label>
+      <input type="number" id="expenses" value="4000" oninput="update()">
+    </div>
+
+    <div class="field">
+      <label>Monthly Savings / Investment ($)</label>
+      <input type="number" id="monthly-invest" value="500" oninput="update()">
+    </div>
+
+    <div class="divider"></div>
+    <h2>Assumptions</h2>
+
+    <div class="field">
+      <label>Expected Market Return (%/yr)</label>
+      <div class="row">
+        <input type="range" id="return-rate" min="3" max="14" value="7" step="0.5" oninput="update()">
+        <span class="val" id="return-val">7%</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Inflation Rate (%/yr)</label>
+      <div class="row">
+        <input type="range" id="inflation" min="1" max="6" value="3" step="0.5" oninput="update()">
+        <span class="val" id="inflation-val">3%</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>View Net Worth at Age</label>
+      <div class="age-display" id="age-tags">
+        <span class="age-tag" data-age="40">40</span>
+        <span class="age-tag active" data-age="50">50</span>
+        <span class="age-tag" data-age="60">60</span>
+        <span class="age-tag" data-age="65">65</span>
+        <span class="age-tag" data-age="70">70</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right-col">
+
+    <!-- Universe cards -->
+    <div class="universes" id="uni-cards"></div>
+
+    <!-- Timeline chart -->
+    <div class="chart-panel">
+      <h2>Wealth Divergence Timeline</h2>
+      <canvas id="timeline"></canvas>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <!-- Insights -->
+    <div class="insights">
+      <h2>Parallel Universe Insights</h2>
+      <div class="insight-list" id="insights"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const UNIVERSES = [
+  {
+    id: 0, color: 'var(--u0)', hex: '#94a3b8',
+    label: 'Universe 0', name: 'Current Path',
+    desc: 'You continue exactly as you are today — same income, same spending, same investment habits.',
+    mod: (p) => ({ ...p }),
+  },
+  {
+    id: 1, color: 'var(--u1)', hex: '#34d399',
+    label: 'Universe 1', name: 'The Frugal Pivot',
+    desc: 'You cut discretionary spending by 20% and redirect every dollar saved into index funds.',
+    mod: (p) => ({ ...p, monthly: p.monthly + p.expenses * 0.20, expenses: p.expenses * 0.80 }),
+  },
+  {
+    id: 2, color: 'var(--u2)', hex: '#60a5fa',
+    label: 'Universe 2', name: 'Raise & Invest',
+    desc: 'You negotiate a 25% raise next year and invest 100% of the increase rather than lifestyle inflating.',
+    mod: (p) => ({ ...p, monthly: p.monthly + (p.income * 0.25) / 12 }),
+  },
+  {
+    id: 3, color: 'var(--u3)', hex: '#f59e0b',
+    label: 'Universe 3', name: 'Side Hustle Empire',
+    desc: 'You launch a side hustle generating $1,500/mo net, fully invested. It grows 5% per year.',
+    mod: (p) => ({ ...p, sideHustle: 1500, sideHustleGrowth: 0.05 }),
+  },
+  {
+    id: 4, color: 'var(--u4)', hex: '#f472b6',
+    label: 'Universe 4', name: 'Debt-Free Sprint',
+    desc: 'You eliminate all consumer debt in 18 months, freeing $600/mo permanently for investment.',
+    mod: (p) => ({ ...p, debtFreeBonus: 600, debtFreeDelay: 1.5 }),
+  },
+  {
+    id: 5, color: 'var(--u5)', hex: '#a78bfa',
+    label: 'Universe 5', name: 'All-In Optimizer',
+    desc: 'You do all of the above — frugal pivot, raise, side hustle, and debt freedom — simultaneously.',
+    mod: (p) => ({
+      ...p,
+      monthly: p.monthly + p.expenses * 0.20 + (p.income * 0.25) / 12,
+      expenses: p.expenses * 0.80,
+      sideHustle: 1500, sideHustleGrowth: 0.05,
+      debtFreeBonus: 600, debtFreeDelay: 1.5,
+    }),
+  },
+];
+
+let targetAge = 50;
+
+document.querySelectorAll('.age-tag').forEach(tag => {
+  tag.addEventListener('click', () => {
+    document.querySelectorAll('.age-tag').forEach(t => t.classList.remove('active'));
+    tag.classList.add('active');
+    targetAge = parseInt(tag.dataset.age);
+    update();
+  });
+});
+
+function getParams() {
+  return {
+    age: parseInt(document.getElementById('age').value),
+    income: parseFloat(document.getElementById('income').value) || 0,
+    savings: parseFloat(document.getElementById('savings').value) || 0,
+    expenses: parseFloat(document.getElementById('expenses').value) || 0,
+    monthly: parseFloat(document.getElementById('monthly-invest').value) || 0,
+    returnRate: parseFloat(document.getElementById('return-rate').value) / 100,
+    inflation: parseFloat(document.getElementById('inflation').value) / 100,
+    sideHustle: 0, sideHustleGrowth: 0,
+    debtFreeBonus: 0, debtFreeDelay: 0,
+  };
+}
+
+function projectWealth(p, years) {
+  let wealth = p.savings;
+  const monthlyReturn = p.returnRate / 12;
+  const data = [wealth];
+
+  for (let y = 0; y < years; y++) {
+    const sideHustleThisYear = p.sideHustle * Math.pow(1 + (p.sideHustleGrowth || 0), y);
+    const debtBonus = (p.debtFreeBonus && y >= p.debtFreeDelay) ? p.debtFreeBonus : 0;
+    const monthlyAdd = p.monthly + sideHustleThisYear / 12 + debtBonus;
+
+    for (let m = 0; m < 12; m++) {
+      wealth = wealth * (1 + monthlyReturn) + monthlyAdd;
+    }
+    data.push(wealth);
+  }
+  return data;
+}
+
+function fmt(n) {
+  if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return '$' + (n / 1e3).toFixed(0) + 'K';
+  return '$' + n.toFixed(0);
+}
+
+function fmtReal(n, years, inflation) {
+  // real (inflation-adjusted) value
+  const real = n / Math.pow(1 + inflation, years);
+  return fmt(real);
+}
+
+function update() {
+  const base = getParams();
+
+  document.getElementById('age-val').textContent = base.age;
+  document.getElementById('return-val').textContent = document.getElementById('return-rate').value + '%';
+  document.getElementById('inflation-val').textContent = document.getElementById('inflation').value + '%';
+
+  const maxAge = 75;
+  const years = Math.max(maxAge - base.age, 1);
+  const targetYears = Math.max(targetAge - base.age, 0);
+
+  // Compute projections
+  const projections = UNIVERSES.map(u => {
+    const p = u.mod({ ...base });
+    const series = projectWealth(p, years);
+    return { ...u, series, atTarget: series[targetYears] || series[series.length - 1] };
+  });
+
+  // Render cards
+  const cards = document.getElementById('uni-cards');
+  cards.innerHTML = projections.map(u => `
+    <div class="uni-card" style="border-left: 3px solid ${u.color}">
+      <div class="uni-label" style="color:${u.color}">${u.label}</div>
+      <div class="uni-name">${u.name}</div>
+      <div class="uni-desc">${u.desc}</div>
+      <div class="uni-net-label">Net Worth at ${targetAge}</div>
+      <div class="uni-net" style="color:${u.color}">${fmt(u.atTarget)}</div>
+      <div class="uni-net-label" style="font-size:0.65rem;margin-top:2px">
+        (${fmtReal(u.atTarget, targetYears, base.inflation)} in today's dollars)
+      </div>
+    </div>
+  `).join('');
+
+  // Render timeline chart
+  drawTimeline(projections, base.age, maxAge, base.inflation);
+
+  // Render insights
+  renderInsights(projections, base, targetYears);
+
+  // Legend
+  const legend = document.getElementById('legend');
+  legend.innerHTML = projections.map(u => `
+    <div class="legend-item">
+      <div class="legend-dot" style="background:${u.hex}"></div>
+      <span>${u.name}</span>
+    </div>
+  `).join('');
+}
+
+function drawTimeline(projections, startAge, endAge, inflation) {
+  const canvas = document.getElementById('timeline');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.parentElement.clientWidth - 48;
+  const h = 320;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const pad = { top: 20, right: 30, bottom: 40, left: 70 };
+  const cw = w - pad.left - pad.right;
+  const ch = h - pad.top - pad.bottom;
+  const years = endAge - startAge;
+
+  // Find max value
+  let maxVal = 0;
+  projections.forEach(u => u.series.forEach(v => { if (v > maxVal) maxVal = v; }));
+  maxVal *= 1.05;
+
+  const xScale = (i) => pad.left + (i / years) * cw;
+  const yScale = (v) => pad.top + ch - (v / maxVal) * ch;
+
+  // Background
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(0, 0, w, h);
+
+  // Grid lines
+  ctx.strokeStyle = '#1f2937';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + (ch / 4) * i;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
+    const val = maxVal * (1 - i / 4);
+    ctx.fillStyle = '#4b5563';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(fmt(val), pad.left - 6, y + 4);
+  }
+
+  // Age labels on x-axis
+  ctx.fillStyle = '#4b5563';
+  ctx.textAlign = 'center';
+  for (let a = startAge; a <= endAge; a += 5) {
+    const x = xScale(a - startAge);
+    ctx.fillText(a, x, h - pad.bottom + 16);
+    ctx.strokeStyle = '#1f2937';
+    ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + ch); ctx.stroke();
+  }
+
+  // Target age vertical line
+  const tx = xScale(targetAge - startAge);
+  ctx.strokeStyle = '#374151';
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(tx, pad.top); ctx.lineTo(tx, pad.top + ch); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#6b7280';
+  ctx.fillText('Age ' + targetAge, tx, pad.top - 6);
+
+  // Draw lines
+  projections.forEach(u => {
+    ctx.strokeStyle = u.hex;
+    ctx.lineWidth = u.id === 0 ? 1.5 : 2;
+    ctx.globalAlpha = u.id === 0 ? 0.5 : 1;
+    ctx.setLineDash(u.id === 0 ? [5, 5] : []);
+    ctx.beginPath();
+    u.series.forEach((v, i) => {
+      const x = xScale(i);
+      const y = yScale(v);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
+
+    // Dot at target age
+    const ti = Math.min(targetAge - startAge, u.series.length - 1);
+    const dotX = xScale(ti);
+    const dotY = yScale(u.series[ti]);
+    ctx.fillStyle = u.hex;
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Axes
+  ctx.strokeStyle = '#374151';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, pad.top);
+  ctx.lineTo(pad.left, pad.top + ch);
+  ctx.lineTo(pad.left + cw, pad.top + ch);
+  ctx.stroke();
+}
+
+function renderInsights(projections, base, targetYears) {
+  const u0 = projections[0].atTarget;
+  const u5 = projections[5].atTarget;
+  const best = projections.reduce((a, b) => a.atTarget > b.atTarget ? a : b);
+  const u2 = projections[2].atTarget;
+  const u1 = projections[1].atTarget;
+  const u3 = projections[3].atTarget;
+
+  const gap = u5 - u0;
+  const annualGap = gap / Math.max(targetYears, 1);
+
+  // Monthly number to FIRE (25x annual expenses rule)
+  const fireTarget = base.expenses * 12 * 25;
+
+  const items = [
+    {
+      title: 'Maximum Opportunity Gap',
+      body: `The difference between your current path and the all-in optimizer is <strong style="color:var(--u5)">${fmt(gap)}</strong> — that's the price of inaction.`
+    },
+    {
+      title: 'Single Best Lever',
+      body: `Your highest-impact single change is <strong style="color:${best.color}">"${best.name}"</strong>, reaching ${fmt(best.atTarget)} by age ${targetAge}.`
+    },
+    {
+      title: 'FIRE Number',
+      body: `Based on your expenses, your financial independence target (25× rule) is <strong style="color:var(--u1)">${fmt(fireTarget)}</strong>.`
+    },
+    {
+      title: 'Raise vs. Frugality',
+      body: `A 25% raise and investing it (${fmt(u2)}) beats cutting 20% spending (${fmt(u1)}) by <strong style="color:var(--u2)">${fmt(u2 - u1)}</strong>.`
+    },
+    {
+      title: 'Side Hustle Premium',
+      body: `A $1,500/mo side hustle adds <strong style="color:var(--u3)">${fmt(u3 - u0)}</strong> over your current path by age ${targetAge} — compounding beats linear income.`
+    },
+    {
+      title: 'Cost of Waiting 1 Year',
+      body: `Delaying any change by just 1 year costs roughly <strong style="color:var(--u4)">${fmt(annualGap * 1)}</strong> in foregone compounding on the best path.`
+    },
+  ];
+
+  document.getElementById('insights').innerHTML = items.map(i => `
+    <div class="insight-item">
+      <strong>${i.title}</strong>
+      ${i.body}
+    </div>
+  `).join('');
+}
+
+// Init
+update();
+window.addEventListener('resize', update);
+</script>
+
+</body>
+</html>
