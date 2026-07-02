@@ -64,7 +64,7 @@
   <div class="panel">
     <h2>1 · Connect routing</h2>
     <div class="field">
-      <label>OpenRouteService API key <a href="https://openrouteservice.org/dev/#/signup" target="_blank" rel="noopener">— get one free →</a></label>
+      <label>OpenRouteService API key (walk · bike · drive) <a href="https://openrouteservice.org/dev/#/signup" target="_blank" rel="noopener">— get one free →</a></label>
       <div class="row">
         <input type="password" id="key" placeholder="paste your free ORS key">
         <button class="btn ghost" style="width:auto;padding:0.5rem 0.8rem" onclick="saveKey()">Save</button>
@@ -94,7 +94,7 @@
         <div class="seg" data-mode="subway">🚇 Subway</div>
         <div class="seg" data-mode="bus">🚌 Bus</div>
       </div>
-      <div class="small">Walk, bike &amp; drive use real road routing (add a key for exact zones). <b style="color:var(--warn)">Subway &amp; bus</b> are modeled estimates — an average door-to-door speed with stop access &amp; waiting time baked in — because this provider has no public-transit data. They work with or without a key.</div>
+      <div class="small">Walk, bike &amp; drive use real road routing (add a key for exact zones). <b style="color:var(--good)">Subway &amp; bus use real public-transit routing</b> — live schedules from the free community service <a href="https://transitous.org" target="_blank" rel="noopener" style="color:var(--accent)">Transitous</a>, no key needed. If it's down or lacks data for your city, you get a clearly-labeled modeled estimate instead.</div>
     </div>
     <div class="field">
       <label>Max commute time — <span class="val" id="time-val">15 min</span></label>
@@ -113,7 +113,7 @@
     </div>
 
     <div class="divider"></div>
-    <div class="status" id="status">Add your free key, then locate a workplace to begin. No key? You'll still get an estimate.</div>
+    <div class="status" id="status">Locate a workplace to begin. Walk/bike/drive get exact zones with a free ORS key; subway &amp; bus use live transit data automatically — no key needed.</div>
   </div>
 
   <!-- RIGHT -->
@@ -123,7 +123,7 @@
       <span><span class="sw" style="background:#34d399"></span><b>Livable zone</b> — reachable in time</span>
       <span><span class="sw" style="background:#6366f1"></span><b>Workplace</b></span>
       <span><span class="sw" style="background:#f472b6"></span><b>Checked home</b></span>
-      <span>Tiles © OpenStreetMap · routing © openrouteservice.org</span>
+      <span>Tiles © OpenStreetMap · roads © openrouteservice.org · transit © transitous.org</span>
     </div>
   </div>
 </div>
@@ -139,14 +139,48 @@
 const ORS = 'https://api.openrouteservice.org';
 const PROFILE = { walk: 'foot-walking', bike: 'cycling-regular', drive: 'driving-car' };
 const SPEED_KMH = { walk: 4.8, bike: 16, drive: 32 }; // for the no-key fallback estimate
-// Modeled transit — this provider has no transit routing, so subway/bus use an
-// effective door-to-door speed (km/h) plus a fixed access penalty (minutes) for
-// walking to a stop, waiting, and egress. Approximate, and labeled as such.
+// Fallback transit model — used only when Transitous (below) is unreachable or
+// has no coverage: an effective door-to-door speed (km/h) plus a fixed access
+// penalty (minutes) for reaching a stop, waiting, and egress.
 const TRANSIT = {
   subway: { speed: 32, access: 8, color: '#f0883e' },
   bus:    { speed: 15, access: 6, color: '#22d3ee' },
 };
 const isTransit = m => m === 'subway' || m === 'bus';
+
+/* ---- real transit routing via Transitous (transitous.org, MOTIS) ---- */
+// Free community service: no API key, CORS-friendly, live GTFS schedules.
+// Coverage varies by region, so every call degrades to the model above on error.
+const MOTIS = 'https://api.transitous.org/api/v1';
+const T_MODES = { subway: 'METRO,SUBWAY', bus: 'BUS' };
+const WALK_MPM = 4.8 * 1000 / 60; // walking metres per minute (stop egress)
+
+async function motisGet(path, params) {
+  const p = { ...params };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let r;
+    try { r = await fetch(`${MOTIS}${path}?` + new URLSearchParams(p)); }
+    catch { throw new Error('transit service unreachable'); }
+    if (r.ok) return r.json();
+    if (p.transitModes && (r.status === 400 || r.status === 422)) { delete p.transitModes; continue; }
+    throw new Error(`transit service error (${r.status})`);
+  }
+  throw new Error('transit service error');
+}
+
+// Tolerant reader for one-to-all reachability responses (field names have
+// shifted across MOTIS versions).
+function extractReachable(j) {
+  const arr = Array.isArray(j) ? j : (j.all || j.reachable || j.places || j.stops || []);
+  const out = [];
+  for (const it of arr) {
+    const p = it.place || it.stop || it;
+    const lat = p.lat ?? p.latitude, lon = p.lon ?? p.lng ?? p.longitude;
+    const secs = it.duration ?? it.travelTime ?? p.duration;
+    if (typeof lat === 'number' && typeof lon === 'number' && typeof secs === 'number') out.push({ lat, lon, secs });
+  }
+  return out;
+}
 
 let mode = 'walk';
 let key = localStorage.getItem('ors_key') || '';
@@ -158,6 +192,7 @@ const map = L.map('map', { zoomControl: true }).setView([40.7549, -73.984], 12);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19, attribution: '© OpenStreetMap contributors'
 }).addTo(map);
+const canvasR = L.canvas({ padding: 0.3 }); // fast renderer for many-circle transit zones
 
 const $ = id => document.getElementById(id);
 function status(msg, kind) { const s = $('status'); s.className = 'status' + (kind ? ' ' + kind : ''); s.innerHTML = msg; }
@@ -219,7 +254,7 @@ async function showZone() {
   if (!workLL) { status('Locate a workplace first (search, or click the map).', 'warn'); return; }
   const minutes = +$('time').value;
   if (isoLayer) { map.removeLayer(isoLayer); isoLayer = null; }
-  if (isTransit(mode)) { drawTransitEstimate(minutes); return; }
+  if (isTransit(mode)) { await transitZone(minutes); return; }
   if (!key) { drawEstimate(minutes); return; }
 
   $('go').disabled = true; status('Asking OpenRouteService for the real travel-time zone…');
@@ -251,20 +286,102 @@ function drawEstimate(minutes) {
   status(`Rough <b>${minutes}-min ${mode}</b> estimate (straight-line, ignores roads). Add a free ORS key for the real zone.`, 'warn');
 }
 
-/* ---- subway/bus estimate — provider has no transit routing ---- */
-function drawTransitEstimate(minutes) {
+/* ---- subway/bus modeled fallback (when Transitous is unavailable) ---- */
+function drawTransitEstimate(minutes, why) {
   const t = TRANSIT[mode];
   const effMin = Math.max(0, minutes - t.access);
   const radiusM = t.speed * 1000 / 60 * effMin; // door-to-door avg, minus stop access/wait
+  const pre = why ? '⚠ ' + why + ' — showing a modeled estimate instead. ' : '';
   if (radiusM <= 0) {
-    status(`In <b>${minutes} min</b> you'd still be reaching a ${mode} stop &amp; waiting (~${t.access} min). Increase the time.`, 'warn');
+    status(`${pre}In <b>${minutes} min</b> you'd still be reaching a ${mode} stop &amp; waiting (~${t.access} min). Increase the time.`, 'warn');
     return;
   }
   isoLayer = L.circle([workLL.lat, workLL.lng], {
     radius: radiusM, color: t.color, weight: 2, dashArray: '6 5', fillColor: t.color, fillOpacity: 0.12
   }).addTo(map);
   map.fitBounds(isoLayer.getBounds(), { padding: [30, 30] });
-  status(`Estimated <b>${minutes}-min ${mode}</b> zone — modeled at ~${t.speed} km/h door-to-door with ~${t.access} min to reach &amp; wait for a stop. Approximate (no transit data from this provider), not turn-by-turn routing.`, 'warn');
+  status(`${pre}Estimated <b>${minutes}-min ${mode}</b> zone — modeled at ~${t.speed} km/h door-to-door with ~${t.access} min stop access &amp; wait. Approximate, not real routing.`, 'warn');
+}
+
+/* ---- real transit zone: every stop truly reachable in time, via Transitous ---- */
+async function transitZone(minutes) {
+  $('go').disabled = true;
+  status(`Asking Transitous which stops are really reachable by ${mode} in ${minutes} min…`);
+  try {
+    const j = await motisGet('/one-to-all', {
+      one: `${workLL.lat},${workLL.lng}`,
+      maxTravelTime: minutes,
+      transitModes: T_MODES[mode],
+    });
+    const pts = extractReachable(j).filter(p => p.secs <= minutes * 60);
+    if (!pts.length) throw new Error(`no ${mode}-reachable stops found here (coverage gap?)`);
+    pts.sort((a, b) => a.secs - b.secs);
+    const t = TRANSIT[mode], layers = [];
+    // pure-walking reach from the workplace itself…
+    layers.push(L.circle([workLL.lat, workLL.lng], {
+      renderer: canvasR, radius: WALK_MPM * minutes, color: t.color, weight: 1,
+      opacity: 0.5, fillColor: t.color, fillOpacity: 0.10, interactive: false
+    }));
+    // …plus each reachable stop, shaded by the walking you can still do from it
+    for (const p of pts.slice(0, 4000)) {
+      const walkM = (minutes * 60 - p.secs) / 60 * WALK_MPM;
+      if (walkM < 40) continue;
+      layers.push(L.circle([p.lat, p.lon], {
+        renderer: canvasR, radius: walkM, stroke: false,
+        fillColor: t.color, fillOpacity: 0.10, interactive: false
+      }));
+    }
+    isoLayer = L.featureGroup(layers).addTo(map);
+    map.fitBounds(isoLayer.getBounds(), { padding: [30, 30] });
+    status(`✓ Real <b>${minutes}-min ${mode}</b> reach — <b>${pts.length}</b> stops reachable on live schedules (departing now, via Transitous). Shading = each stop plus the walking you can still do from it.`, 'ok');
+  } catch (e) {
+    drawTransitEstimate(minutes, e.message);
+  } finally { $('go').disabled = false; }
+}
+
+/* ---- real transit home-check via Transitous, with modeled fallback ---- */
+function transitHomeEstimate(minutes, why) {
+  const t = TRANSIT[mode], km = haversine(workLL, homeLL), mins = t.access + km / t.speed * 60;
+  drawRouteLine();
+  const pre = why ? '⚠ ' + why + ' — falling back to an estimate. ' : '';
+  status(`${pre}🏠 ≈ <b>${mins.toFixed(0)} min</b> by ${mode} (${km.toFixed(1)} km at ~${t.speed} km/h + ~${t.access} min access). ${mins <= minutes ? '<b>✓ within budget</b>' : '<b>✗ over budget</b>'}.`, mins <= minutes ? 'ok' : 'err');
+}
+async function transitHomeCheck(g, minutes) {
+  status(`Asking Transitous for a real ${mode} route…`);
+  try {
+    const j = await motisGet('/plan', {
+      fromPlace: `${homeLL.lat},${homeLL.lng}`,
+      toPlace: `${workLL.lat},${workLL.lng}`,
+      transitModes: T_MODES[mode],
+    });
+    const its = j.itineraries || [];
+    if (!its.length) throw new Error(`no ${mode} route found here (coverage gap?)`);
+    const best = its.reduce((a, b) => (b.duration < a.duration ? b : a));
+    const mins = best.duration / 60;
+    if (routeLayer) map.removeLayer(routeLayer);
+    const segs = [];
+    for (const leg of (best.legs || [])) {
+      const f = leg.from, to = leg.to;
+      if (!f || !to) continue;
+      const ride = leg.mode && leg.mode !== 'WALK';
+      segs.push(L.polyline(
+        [[f.lat, f.lon ?? f.lng], [to.lat, to.lon ?? to.lng]],
+        ride ? { color: TRANSIT[mode].color, weight: 4, opacity: 0.9 }
+             : { color: '#f472b6', weight: 3, opacity: 0.8, dashArray: '6 5' }
+      ));
+    }
+    if (!segs.length) segs.push(L.polyline([[homeLL.lat, homeLL.lng], [workLL.lat, workLL.lng]],
+      { color: TRANSIT[mode].color, weight: 4, opacity: 0.9 }));
+    routeLayer = L.featureGroup(segs).addTo(map);
+    map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
+    const rides = (best.legs || []).filter(l => l.mode && l.mode !== 'WALK');
+    const names = rides.map(l => l.routeShortName || l.route || l.mode).join(' → ');
+    const tr = Math.max(0, rides.length - 1);
+    const ok = mins <= minutes;
+    status(`🏠 <b>${g.label.split(',')[0]}</b> → work: <b>${mins.toFixed(0)} min</b> by ${mode}${names ? ' via ' + names : ''} (${tr} transfer${tr === 1 ? '' : 's'}) — ${ok ? '<b>✓ a match!</b>' : `<b>✗ over your ${minutes}-min budget</b>`} · real route, live schedules, departing now.`, ok ? 'ok' : 'err');
+  } catch (e) {
+    transitHomeEstimate(minutes, e.message);
+  }
 }
 
 /* ---- check a specific home ---- */
@@ -278,12 +395,7 @@ async function checkHome() {
   homeMarker = L.marker([g.lat, g.lng]).addTo(map).bindPopup('🏠 ' + g.label).openPopup();
 
   const minutes = +$('time').value;
-  if (isTransit(mode)) {
-    const t = TRANSIT[mode], km = haversine(workLL, homeLL), mins = t.access + km / t.speed * 60;
-    drawRouteLine();
-    status(`🏠 ≈ <b>${mins.toFixed(0)} min</b> by ${mode} — estimate: ${km.toFixed(1)} km at ~${t.speed} km/h + ~${t.access} min access &amp; wait. ${mins <= minutes ? '<b>✓ within budget</b>' : '<b>✗ over budget</b>'}.`, mins <= minutes ? 'ok' : 'err');
-    return;
-  }
+  if (isTransit(mode)) { await transitHomeCheck(g, minutes); return; }
   if (!key) {
     const km = haversine(workLL, homeLL), mins = km / SPEED_KMH[mode] * 60;
     drawRouteLine();
